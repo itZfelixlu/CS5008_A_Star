@@ -167,7 +167,69 @@ void reconstruct_path(graph_node_t* intersection, int start_x, int start_y, int 
     int total_cost = intersection->cost + intersection->cost_bwd;
     printf("Total path cost: %d\n", total_cost);
 }
-    
+
+void dynamic_weighted_a_star(int start_x, int start_y, int end_x, int end_y) {
+    // PID parameters
+    double Kp = 0.5, Ki = 0.01, Kd = 0.1;
+    double w_base = 1.0, w_min = 1.0, w_max = 3.0;
+    double last_error = heuristic(start_x, start_y, end_x, end_y);
+    double integral = 0;
+
+    graph[start_y][start_x]->cost = 0;
+    graph[start_y][start_x]->prev = NULL;
+    insert(graph[start_y][start_x], 0);
+
+    while (!is_empty()) {
+        graph_node_t* curr = get();
+        if (curr->x == end_x && curr->y == end_y) {
+            reconstruct_path_single(curr, start_x, start_y);
+            break;
+        }
+
+        // Calculate error and update w using PID
+        double error = heuristic(curr->x, curr->y, end_x, end_y);
+        double proportional = Kp * error;
+        integral += Ki * error;
+        double derivative = Kd * (error - last_error);
+        double w = w_base + proportional + integral + derivative;
+        w = (w < w_min) ? w_min : (w > w_max) ? w_max : w;
+        last_error = error;
+
+        adj_list_node_t* neighbor = curr->adj_list_head;
+        while (neighbor != NULL) {
+            int new_cost = curr->cost + neighbor->distance;
+            if ((!neighbor->node->reached) || new_cost < neighbor->node->cost) {
+                neighbor->node->cost = new_cost;
+                neighbor->node->prev = curr;
+                neighbor->node->reached = 1;
+                double h = heuristic(neighbor->node->x, neighbor->node->y, end_x, end_y);
+                int priority = new_cost + w * h;
+                insert(neighbor->node, priority);
+            }
+            neighbor = neighbor->next;
+        }
+    }
+}
+
+// Reconstruct and print path for single-direction A*
+void reconstruct_path_single(graph_node_t* end_node, int start_x, int start_y) {
+    if (!end_node) {
+        printf("No path found.\n");
+        return;
+    }
+
+    printf("Path from (%d, %d) to (%d, %d): ", start_x, start_y, end_node->x, end_node->y);
+    graph_node_t* curr = end_node;
+    while (curr != NULL) {
+        printf("(%d, %d) ", curr->x, curr->y);
+        if (curr->x == start_x && curr->y == start_y) break;
+        curr = curr->prev;
+    }
+    printf("\nTotal path cost: %d\n", end_node->cost);
+}
+
+
+
 
 
 
