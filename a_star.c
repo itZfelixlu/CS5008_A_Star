@@ -8,224 +8,393 @@
 
 #include <stdio.h>
 #include <math.h>
+#include <stdlib.h>
 
 #include "priority_queue.h"
 #include "a_star.h"
 
-graph_node_t*** graph;
+// Global graph
+graph_node_t* graph[GRID_SIZE][GRID_SIZE];
 
-// TODO: GRAPH INIT, POSSIBLY RANDOM
-
-void a_star(int start_x, int start_y, int end_x, int end_y) {
-    graph[start_y][start_x]->cost = 0;
-    graph[start_y][start_x]->prev = NULL;
-    insert(graph[start_y][start_x], 0);
-    while (!is_empty()) {
-        graph_node_t* curr = get();
-        if (curr->x == end_x && curr->y == end_y) {
-            // Found target
-            break;
-        }
-        adj_list_node_t* neighbor = curr->adj_list_head;
-        while (neighbor != NULL) {
-            int new_cost = curr->cost + neighbor->distance;
-            if ((!neighbor->node->reached) || new_cost < neighbor->node->cost) {
-                neighbor->node->cost = new_cost;
-                neighbor->node->prev = curr;
-                // Case 1: Basic Heuristic function using Eucliean Distance
-                int priority = new_cost + heuristic(neighbor->node->x, neighbor->node->y, end_x, end_y); // TODO: ADD HEURISTIC VALUE WHEN FUNCTIONS IMPLEMENTED
-                insert(neighbor->node, priority);
-            }
-        }
-    }
-    // At this point, the shortest path and distance should be obtainable from the end node
-}
-
-// TODO: Heuristic functions, free graph and adjacency list nodes
-// Eucliean Distance for 8 directions
+// Heuristic function (Euclidean distance)
 double heuristic(int x1, int y1, int x2, int y2) {
-    return sqrt(pow(x2 - x1, 2) + pow(y2 - y1, 2));
+    return sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
 }
 
-
-void bidirectional_a_star(int start_x, int start_y, int end_x, int end_y) {
-    // Initialize forward and backward queues
-    init_queue_fwd();
-    init_queue_bwd();
-
-    // Start node (forward)
-    graph_node_t* start = graph[start_y][start_x];
-    start->cost = 0;
-    start->prev = NULL;
-    start->reached = 1;
-    insert_fwd(start, 0, &queue_fwd, &queue_size_fwd, &max_queue_size_fwd);
-
-    // Goal node (backward)
-    graph_node_t* goal = graph[end_y][end_x];
-    goal->cost_bwd = 0;  // Use cost_bwd for backward
-    goal->prev_bwd = NULL;
-    goal->reached = 2;
-    insert_bwd(goal, 0, &queue_bwd, &queue_size_bwd, &max_queue_size_bwd);
-
-    graph_node_t* intersection = NULL;
-
-    while (!is_empty_fwd() && !is_empty_bwd()) {
-        // Forward step
-        graph_node_t* curr_fwd = get_fwd(queue_fwd, &queue_size_fwd);
-        adj_list_node_t* neighbor_fwd = curr_fwd->adj_list_head;
-        while (neighbor_fwd != NULL) {
-            graph_node_t* n = neighbor_fwd->node;
-            int new_cost = curr_fwd->cost + neighbor_fwd->distance;
-
-            // Check for intersection
-            if (n->reached == 2) {  // Visited by backward
-                n->reached = 3;
-                n->prev = curr_fwd;  // Forward parent
-                n->cost = new_cost;  // Set forward cost
-                intersection = n;
-                goto cleanup;
-            }
-
-            if (n->reached == 0 || (n->reached == 1 && new_cost < n->cost)) {
-                n->cost = new_cost;
-                n->prev = curr_fwd;
-                n->reached = 1;
-                int priority = new_cost + heuristic(n->x, n->y, end_x, end_y);
-                insert_fwd(n, priority, &queue_fwd, &queue_size_fwd, &max_queue_size_fwd);
-            }
-            neighbor_fwd = neighbor_fwd->next;
+// Initialize the graph
+void init_graph() {
+    for (int y = 0; y < GRID_SIZE; y++) {
+        for (int x = 0; x < GRID_SIZE; x++) {
+            graph[y][x] = (graph_node_t*)malloc(sizeof(graph_node_t));
+            graph[y][x]->x = x;
+            graph[y][x]->y = y;
+            graph[y][x]->g_cost = MAX_COST;
+            graph[y][x]->h_cost = 0.0;
+            graph[y][x]->f_cost = MAX_COST;
+            graph[y][x]->parent = NULL;
+            graph[y][x]->backward_parent = NULL;
+            graph[y][x]->reached = 0;
+            graph[y][x]->adj_list_head = NULL;
         }
-
-        // Backward step
-        graph_node_t* curr_bwd = get_bwd(queue_bwd, &queue_size_bwd);
-        adj_list_node_t* neighbor_bwd = curr_bwd->adj_list_head;
-        while (neighbor_bwd != NULL) {
-            graph_node_t* n = neighbor_bwd->node;
-            int new_cost = curr_bwd->cost_bwd + neighbor_bwd->distance;
-
-            // Check for intersection
-            if (n->reached == 1) {  // Visited by forward
-                n->reached = 3;
-                n->prev_bwd = curr_bwd;  // Backward parent
-                n->cost_bwd = new_cost;  // Set backward cost
-                intersection = n;
-                goto cleanup;
-            }
-
-            if (n->reached == 0 || (n->reached == 2 && new_cost < n->cost_bwd)) {
-                n->cost_bwd = new_cost;
-                n->prev_bwd = curr_bwd;
-                n->reached = 2;
-                int priority = new_cost + heuristic(n->x, n->y, start_x, start_y);
-                insert_bwd(n, priority, &queue_bwd, &queue_size_bwd, &max_queue_size_bwd);
-            }
-            neighbor_bwd = neighbor_bwd->next;
-        }
-    }
-
-    cleanup:
-    if (intersection) {
-        printf("Intersection at (%d, %d)\n", intersection->x, intersection->y);
-        reconstruct_path(intersection, start_x, start_y, end_x, end_y);
-    } else {
-        printf("No path found.\n");
     }
 }
 
-// Reconstruct and print the path for bidirectional A*
-void reconstruct_path(graph_node_t* intersection, int start_x, int start_y, int end_x, int end_y) {
-    if (!intersection) {
-        printf("No path found.\n");
-        return;
-    }
-
-    printf("Path from (%d, %d) to (%d, %d):\n", start_x, start_y, end_x, end_y);
-
-    // Forward path: from start to intersection (reverse order)
-    graph_node_t* curr = intersection;
-    printf("Forward path: ");
-    while (curr != NULL && (curr->x != start_x || curr->y != start_y)) {
-        printf("(%d, %d) <- ", curr->x, curr->y);
-        curr = curr->prev;
-    }
-    if (curr) {
-        printf("(%d, %d)\n", curr->x, curr->y);  // Start node
-    }
-
-    // Backward path: from intersection to goal
-    curr = intersection;
-    printf("Backward path: (%d, %d) ", curr->x, curr->y);  // Intersection already printed
-    while (curr != NULL && (curr->x != end_x || curr->y != end_y)) {
-        curr = curr->prev_bwd;
-        if (curr) {
-            printf("-> (%d, %d) ", curr->x, curr->y);
-        }
-    }
-    printf("\n");
-
-    // Total cost
-    int total_cost = intersection->cost + intersection->cost_bwd;
-    printf("Total path cost: %d\n", total_cost);
+// Add an edge between two nodes
+void add_edge(int x1, int y1, int x2, int y2, int distance) {
+    adj_list_node_t* node1 = (adj_list_node_t*)malloc(sizeof(adj_list_node_t));
+    adj_list_node_t* node2 = (adj_list_node_t*)malloc(sizeof(adj_list_node_t));
+    
+    node1->node = graph[y2][x2];
+    node1->distance = distance;
+    node1->next = graph[y1][x1]->adj_list_head;
+    graph[y1][x1]->adj_list_head = node1;
+    
+    node2->node = graph[y1][x1];
+    node2->distance = distance;
+    node2->next = graph[y2][x2]->adj_list_head;
+    graph[y2][x2]->adj_list_head = node2;
 }
 
-void dynamic_weighted_a_star(int start_x, int start_y, int end_x, int end_y) {
-    // PID parameters
-    double Kp = 0.5, Ki = 0.01, Kd = 0.1;
-    double w_base = 1.0, w_min = 1.0, w_max = 3.0;
-    double last_error = heuristic(start_x, start_y, end_x, end_y);
-    double integral = 0;
-
-    graph[start_y][start_x]->cost = 0;
-    graph[start_y][start_x]->prev = NULL;
-    insert(graph[start_y][start_x], 0);
-
-    while (!is_empty()) {
-        graph_node_t* curr = get();
-        if (curr->x == end_x && curr->y == end_y) {
-            reconstruct_path_single(curr, start_x, start_y);
+// Regular A* algorithm
+void a_star(int start_x, int start_y, int end_x, int end_y) {
+    PriorityQueue* open_set = create_priority_queue(100);
+    PriorityQueue* closed_set = create_priority_queue(100);
+    
+    // Reset graph
+    for (int y = 0; y < GRID_SIZE; y++) {
+        for (int x = 0; x < GRID_SIZE; x++) {
+            graph[y][x]->g_cost = MAX_COST;
+            graph[y][x]->h_cost = 0.0;
+            graph[y][x]->f_cost = MAX_COST;
+            graph[y][x]->parent = NULL;
+            graph[y][x]->reached = 0;
+        }
+    }
+    
+    // Set start node
+    graph[start_y][start_x]->g_cost = 0;
+    graph[start_y][start_x]->h_cost = heuristic(start_x, start_y, end_x, end_y);
+    graph[start_y][start_x]->f_cost = graph[start_y][start_x]->h_cost;
+    graph[start_y][start_x]->reached = 1;
+    
+    enqueue(open_set, graph[start_y][start_x]);
+    
+    while (!is_empty(open_set)) {
+        graph_node_t* current = dequeue(open_set);
+        if (!current) break;
+        
+        if (current->x == end_x && current->y == end_y) {
             break;
         }
-
-        // Calculate error and update w using PID
-        double error = heuristic(curr->x, curr->y, end_x, end_y);
-        double proportional = Kp * error;
-        integral += Ki * error;
-        double derivative = Kd * (error - last_error);
-        double w = w_base + proportional + integral + derivative;
-        w = (w < w_min) ? w_min : (w > w_max) ? w_max : w;
-        last_error = error;
-
-        adj_list_node_t* neighbor = curr->adj_list_head;
-        while (neighbor != NULL) {
-            int new_cost = curr->cost + neighbor->distance;
-            if ((!neighbor->node->reached) || new_cost < neighbor->node->cost) {
-                neighbor->node->cost = new_cost;
-                neighbor->node->prev = curr;
-                neighbor->node->reached = 1;
-                double h = heuristic(neighbor->node->x, neighbor->node->y, end_x, end_y);
-                int priority = new_cost + w * h;
-                insert(neighbor->node, priority);
+        
+        enqueue(closed_set, current);
+        
+        adj_list_node_t* neighbor = current->adj_list_head;
+        while (neighbor) {
+            if (!is_in_queue(closed_set, neighbor->node)) {
+                double tentative_g = current->g_cost + neighbor->distance;
+                
+                if (tentative_g < neighbor->node->g_cost) {
+                    neighbor->node->parent = current;
+                    neighbor->node->g_cost = tentative_g;
+                    neighbor->node->h_cost = heuristic(neighbor->node->x, neighbor->node->y, end_x, end_y);
+                    neighbor->node->f_cost = neighbor->node->g_cost + neighbor->node->h_cost;
+                    
+                    if (!is_in_queue(open_set, neighbor->node)) {
+                        enqueue(open_set, neighbor->node);
+                    }
+                }
             }
             neighbor = neighbor->next;
         }
     }
+    
+    // Print path
+    printf("\nPath from (%d,%d) to (%d,%d): ", start_x, start_y, end_x, end_y);
+    graph_node_t* current = graph[end_y][end_x];
+    while (current) {
+        printf("(%d,%d) ", current->x, current->y);
+        current = current->parent;
+    }
+    printf("\nTotal path cost: %.2f\n", graph[end_y][end_x]->g_cost);
+    
+    free_priority_queue(open_set);
+    free_priority_queue(closed_set);
 }
 
-// Reconstruct and print path for single-direction A*
-void reconstruct_path_single(graph_node_t* end_node, int start_x, int start_y) {
-    if (!end_node) {
-        printf("No path found.\n");
-        return;
-    }
+// PID Controller update function
+void update_pid_controller(PIDController* pid, double current_error) {
+    double error = current_error;
+    double derivative = error - pid->last_error;
+    pid->integral += error;
+    
+    // Anti-windup: limit integral term
+    if (pid->integral > 5.0) pid->integral = 5.0;
+    if (pid->integral < -5.0) pid->integral = -5.0;
+    
+    // Calculate weight adjustment
+    double adjustment = pid->kp * error + 
+                       pid->ki * pid->integral + 
+                       pid->kd * derivative;
+    
+    // Update weight with bounds
+    pid->weight = 1 + adjustment;
+    if (pid->weight < 1.0) pid->weight = 1.0;
+    if (pid->weight > 10.0) pid->weight = 10.0;
+    
+    pid->last_error = error;
+}
 
-    printf("Path from (%d, %d) to (%d, %d): ", start_x, start_y, end_node->x, end_node->y);
-    graph_node_t* curr = end_node;
-    while (curr != NULL) {
-        printf("(%d, %d) ", curr->x, curr->y);
-        if (curr->x == start_x && curr->y == start_y) break;
-        curr = curr->prev;
+// Dynamic Weighted A* with PID controller
+void dynamic_weighted_a_star(int start_x, int start_y, int end_x, int end_y) {
+    // Initialize PID controller
+    PIDController pid = {0};
+    pid.kp = 0.1;
+    pid.ki = 0.01;
+    pid.kd = 0.05;
+    pid.weight = 1.0;
+    pid.last_error = heuristic(start_x, start_y, end_x, end_y);
+    pid.integral = 0.0;
+    
+    PriorityQueue* open_set = create_priority_queue(100);
+    PriorityQueue* closed_set = create_priority_queue(100);
+    
+    // Reset graph
+    for (int y = 0; y < GRID_SIZE; y++) {
+        for (int x = 0; x < GRID_SIZE; x++) {
+            graph[y][x]->g_cost = MAX_COST;
+            graph[y][x]->h_cost = 0.0;
+            graph[y][x]->f_cost = MAX_COST;
+            graph[y][x]->parent = NULL;
+            graph[y][x]->reached = 0;
+        }
     }
-    printf("\nTotal path cost: %d\n", end_node->cost);
+    
+    // Set start node
+    graph[start_y][start_x]->g_cost = 0;
+    graph[start_y][start_x]->h_cost = heuristic(start_x, start_y, end_x, end_y);
+    graph[start_y][start_x]->f_cost = graph[start_y][start_x]->h_cost;
+    graph[start_y][start_x]->reached = 1;
+    
+    enqueue(open_set, graph[start_y][start_x]);
+    
+    printf("\nStarting PID A* search...\n");
+    printf("Initial error: %.2f\n", graph[start_y][start_x]->h_cost);
+    
+    int iterations = 0;
+    int max_iterations = 1000;
+    
+    while (!is_empty(open_set) && iterations < max_iterations) {
+        iterations++;
+        
+        graph_node_t* current = dequeue(open_set);
+        if (!current) break;
+        
+        if (current->x == end_x && current->y == end_y) {
+            printf("Goal reached in %d iterations!\n", iterations);
+            break;
+        }
+        
+        double current_error = heuristic(current->x, current->y, end_x, end_y);
+        update_pid_controller(&pid, current_error);
+        
+        enqueue(closed_set, current);
+        
+        adj_list_node_t* neighbor = current->adj_list_head;
+        while (neighbor) {
+            if (!is_in_queue(closed_set, neighbor->node)) {
+                double tentative_g = current->g_cost + neighbor->distance;
+                
+                if (tentative_g < neighbor->node->g_cost) {
+                    neighbor->node->parent = current;
+                    neighbor->node->g_cost = tentative_g;
+                    neighbor->node->h_cost = heuristic(neighbor->node->x, neighbor->node->y, end_x, end_y);
+                    neighbor->node->f_cost = neighbor->node->g_cost + pid.weight * neighbor->node->h_cost;
+                    
+                    
+                    if (!is_in_queue(open_set, neighbor->node)) {
+                        enqueue(open_set, neighbor->node);
+                    }
+                }
+            }
+            neighbor = neighbor->next;
+        }
+        
+        // Print PID values every 5 iterations
+        if (iterations % 2 == 0) {
+            printf("Iteration %d: weight=%.2f, error=%.2f\n", 
+                   iterations, pid.weight, pid.last_error);
+        }
+    }
+    
+    if (iterations >= max_iterations) {
+        printf("Maximum iterations reached!\n");
+    }
+    
+    // Print path
+    printf("\nFinal path from (%d,%d) to (%d,%d):\n", start_x, start_y, end_x, end_y);
+    graph_node_t* current = graph[end_y][end_x];
+    while (current) {
+        printf("(%d,%d) ", current->x, current->y);
+        current = current->parent;
+    }
+    printf("\nTotal path cost: %.2f\n", graph[end_y][end_x]->g_cost);
+    
+    free_priority_queue(open_set);
+    free_priority_queue(closed_set);
+}
+
+// Bidirectional A* algorithm
+void bidirectional_a_star(int start_x, int start_y, int end_x, int end_y) {
+    init_queue_fwd();
+    init_queue_bwd();
+    
+    // Reset graph 
+    for (int y = 0; y < GRID_SIZE; y++) {
+        for (int x = 0; x < GRID_SIZE; x++) {
+            graph[y][x]->g_cost = MAX_COST;
+            graph[y][x]->h_cost = 0.0;
+            graph[y][x]->f_cost = MAX_COST;
+            graph[y][x]->parent = NULL;
+            graph[y][x]->backward_parent = NULL;
+            graph[y][x]->reached = 0;  // 0 = unvisited, 1 = forward, 2 = backward
+        }
+    }
+    
+    graph[start_y][start_x]->g_cost = 0;
+    graph[start_y][start_x]->h_cost = heuristic(start_x, start_y, end_x, end_y);
+    graph[start_y][start_x]->f_cost = graph[start_y][start_x]->h_cost;
+    graph[start_y][start_x]->reached = 1;  // Forward
+    
+    graph[end_y][end_x]->g_cost = 0;
+    graph[end_y][end_x]->h_cost = heuristic(end_x, end_y, start_x, start_y);
+    graph[end_y][end_x]->f_cost = graph[end_y][end_x]->h_cost;
+    graph[end_y][end_x]->reached = 2;  // Backward
+    
+    insert_fwd(graph[start_y][start_x], graph[start_y][start_x]->f_cost, &queue_fwd, &queue_size_fwd, &max_queue_size_fwd);
+    insert_bwd(graph[end_y][end_x], graph[end_y][end_x]->f_cost, &queue_bwd, &queue_size_bwd, &max_queue_size_bwd);
+    
+    graph_node_t* intersection = NULL;
+    double best_path_cost = MAX_COST;
+    
+    while (!is_empty_fwd() && !is_empty_bwd()) {
+        // Forward search
+        graph_node_t* current_fwd = get_fwd(queue_fwd, &queue_size_fwd);
+        if (!current_fwd) break;
+        
+        adj_list_node_t* neighbor = current_fwd->adj_list_head;
+        while (neighbor) {
+            double tentative_g = current_fwd->g_cost + neighbor->distance;
+            if (tentative_g < neighbor->node->g_cost) {
+                neighbor->node->parent = current_fwd;
+                neighbor->node->g_cost = tentative_g;
+                neighbor->node->h_cost = heuristic(neighbor->node->x, neighbor->node->y, end_x, end_y);
+                neighbor->node->f_cost = tentative_g + neighbor->node->h_cost;
+                
+                if (neighbor->node->reached == 2) {  // Found intersection
+                    double total_cost = tentative_g + neighbor->node->g_cost;
+                    if (total_cost < best_path_cost) {
+                        best_path_cost = total_cost;
+                        intersection = neighbor->node;
+                    }
+                } else if (neighbor->node->reached == 0) {
+                    neighbor->node->reached = 1;  // Mark as forward
+                    insert_fwd(neighbor->node, neighbor->node->f_cost, &queue_fwd, &queue_size_fwd, &max_queue_size_fwd);
+                }
+            }
+            neighbor = neighbor->next;
+        }
+        
+        // Backward search
+        graph_node_t* current_bwd = get_bwd(queue_bwd, &queue_size_bwd);
+        if (!current_bwd) break;
+        
+        neighbor = current_bwd->adj_list_head;
+        while (neighbor) {
+            double tentative_g = current_bwd->g_cost + neighbor->distance;
+            if (tentative_g < neighbor->node->g_cost) {
+                neighbor->node->backward_parent = current_bwd;  // Use backward_parent
+                neighbor->node->g_cost = tentative_g;
+                neighbor->node->h_cost = heuristic(neighbor->node->x, neighbor->node->y, start_x, start_y);
+                neighbor->node->f_cost = tentative_g + neighbor->node->h_cost;
+                
+                if (neighbor->node->reached == 1) {  // Found intersection
+                    double total_cost = tentative_g + neighbor->node->g_cost;
+                    if (total_cost < best_path_cost) {
+                        best_path_cost = total_cost;
+                        intersection = neighbor->node;
+                    }
+                } else if (neighbor->node->reached == 0) {
+                    neighbor->node->reached = 2;  // Mark as backward
+                    insert_bwd(neighbor->node, neighbor->node->f_cost, &queue_bwd, &queue_size_bwd, &max_queue_size_bwd);
+                }
+            }
+            neighbor = neighbor->next;
+        }
+    }
+    
+    if (intersection) {
+        printf("\nIntersection found at (%d,%d)\n", intersection->x, intersection->y);
+        
+        // Print forward path (start to intersection)
+        printf("Forward path (start to intersection): ");
+        graph_node_t* curr = intersection;
+        while (curr && curr != graph[start_y][start_x]) {
+            printf("(%d,%d) ", curr->x, curr->y);
+            curr = curr->parent;
+        }
+        printf("(%d,%d)\n", start_x, start_y);
+        
+        // Print backward path (intersection to goal)
+        printf("Backward path (intersection to goal): ");
+        curr = intersection;
+        while (curr && curr != graph[end_y][end_x]) {
+            printf("(%d,%d) ", curr->x, curr->y);
+            curr = curr->backward_parent;
+        }
+        printf("(%d,%d)\n", end_x, end_y);
+        
+        printf("Total path cost: %.2f\n", best_path_cost);
+    } else {
+        printf("No path found!\n");
+    }
+    
+    free_queue_fwd();
+    free_queue_bwd();
+}
+
+// Main function
+int main() {
+    init_graph();
+    
+    // Create a simple grid with diagonal connections
+    for (int y = 0; y < GRID_SIZE; y++) {
+        for (int x = 0; x < GRID_SIZE; x++) {
+            // Connect to right neighbor
+            if (x < GRID_SIZE - 1) {
+                add_edge(x, y, x + 1, y, 1);
+            }
+            // Connect to bottom neighbor
+            if (y < GRID_SIZE - 1) {
+                add_edge(x, y, x, y + 1, 1);
+            }
+            // Connect to diagonal neighbors
+            if (x < GRID_SIZE - 1 && y < GRID_SIZE - 1) {
+                add_edge(x, y, x + 1, y + 1, 1);
+            }
+        }
+    }
+    
+    printf("Testing regular A* from (0,0) to (9,9)\n");
+    a_star(0, 0, 9, 9);
+    
+    printf("\nTesting bidirectional A* from (0,0) to (9,9)\n");
+    bidirectional_a_star(0, 0, 9, 9);
+    
+    printf("\nTesting PID A* from (0,0) to (9,9)\n");
+    dynamic_weighted_a_star(0, 0, 9, 9);
+    
+    return 0;
 }
 
 
