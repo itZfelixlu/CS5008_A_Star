@@ -33,6 +33,7 @@ typedef struct {
 typedef struct graph_node {
     int x, y;
     double g_cost;      // Cost from start
+    double g_cost_bwd;  // New field for backward search
     double h_cost;      // Heuristic cost to goal
     double f_cost;      // Total cost (g + h)
     struct graph_node* parent;        // Parent in forward search
@@ -44,13 +45,13 @@ typedef struct graph_node {
 // Adjacency list node structure
 typedef struct adj_list_node {
     graph_node_t* node;
-    int distance;
+    double distance;
     struct adj_list_node* next;
 } adj_list_node_t;
 
 // Function declarations
 void init_graph();
-void add_edge(int x1, int y1, int x2, int y2, int distance);
+void add_edge(int x1, int y1, int x2, int y2, double distance);
 void a_star(int start_x, int start_y, int end_x, int end_y);
 void bidirectional_a_star(int start_x, int start_y, int end_x, int end_y);
 void dynamic_weighted_a_star(int start_x, int start_y, int end_x, int end_y);

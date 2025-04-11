@@ -40,7 +40,7 @@ void init_graph() {
 }
 
 // Add an edge between two nodes
-void add_edge(int x1, int y1, int x2, int y2, int distance) {
+void add_edge(int x1, int y1, int x2, int y2, double distance) {
     adj_list_node_t* node1 = (adj_list_node_t*)malloc(sizeof(adj_list_node_t));
     adj_list_node_t* node2 = (adj_list_node_t*)malloc(sizeof(adj_list_node_t));
     
@@ -76,13 +76,13 @@ void setup_simple_grid() {
     for (int y = 0; y < GRID_SIZE; y++) {
         for (int x = 0; x < GRID_SIZE; x++) {
             if (x < GRID_SIZE - 1) {
-                add_edge(x, y, x + 1, y, 1); // Right
+                add_edge(x, y, x + 1, y, 1.0); // Right
             }
             if (y < GRID_SIZE - 1) {
-                add_edge(x, y, x, y + 1, 1); // Down
+                add_edge(x, y, x, y + 1, 1.0); // Down
             }
             if (x < GRID_SIZE - 1 && y < GRID_SIZE - 1) {
-                add_edge(x, y, x + 1, y + 1, 1); // Diagonal
+                add_edge(x, y, x + 1, y + 1, sqrt(2)); // Diagonal
             }
         }
     }
@@ -109,9 +109,9 @@ void setup_complicated_grid() {
             }
             // Diagonal neighbor
             if (x < GRID_SIZE - 1 && y < GRID_SIZE - 1) {
-                int cost = 1;
-                if (y >= 4 && y <= 6) cost = 3; // Slope in middle region
-                if (x == 3 && y == 3) cost = MAX_COST; // Obstacle at (3,3) to (4,4)
+                double cost = sqrt(2);
+                if (y >= 4 && y <= 6) cost = 3.0 * sqrt(2);
+                if (x == 3 && y == 3) cost = MAX_COST;
                 if (cost != MAX_COST) add_edge(x, y, x + 1, y + 1, cost);
             }
         }
@@ -312,13 +312,17 @@ void dynamic_weighted_a_star(int start_x, int start_y, int end_x, int end_y) {
 
 // Bidirectional A* algorithm with safety checks
 void bidirectional_a_star(int start_x, int start_y, int end_x, int end_y) {
+    printf("Starting bidirectional A* from (%d,%d) to (%d,%d)\n", start_x, start_y, end_x, end_y);
+    
     init_queue_fwd();
     init_queue_bwd();
+    // printf("Queues initialized\n");
     
-    // Reset graph fully
+    // Reset graph
     for (int y = 0; y < GRID_SIZE; y++) {
         for (int x = 0; x < GRID_SIZE; x++) {
             graph[y][x]->g_cost = MAX_COST;
+            graph[y][x]->g_cost_bwd = MAX_COST;  // Initialize backward cost
             graph[y][x]->h_cost = 0.0;
             graph[y][x]->f_cost = MAX_COST;
             graph[y][x]->parent = NULL;
@@ -326,6 +330,7 @@ void bidirectional_a_star(int start_x, int start_y, int end_x, int end_y) {
             graph[y][x]->reached = 0;
         }
     }
+    // printf("Graph reset\n");
     
     // Check if start and end nodes are valid
     if (start_x < 0 || start_x >= GRID_SIZE || start_y < 0 || start_y >= GRID_SIZE ||
@@ -334,32 +339,38 @@ void bidirectional_a_star(int start_x, int start_y, int end_x, int end_y) {
         return;
     }
 
+   
     graph[start_y][start_x]->g_cost = 0;
     graph[start_y][start_x]->h_cost = heuristic(start_x, start_y, end_x, end_y);
     graph[start_y][start_x]->f_cost = graph[start_y][start_x]->h_cost;
     graph[start_y][start_x]->reached = 1;
     
-    graph[end_y][end_x]->g_cost = 0;
+    graph[end_y][end_x]->g_cost_bwd = 0;  // Use g_cost_bwd for backward search
     graph[end_y][end_x]->h_cost = heuristic(end_x, end_y, start_x, start_y);
     graph[end_y][end_x]->f_cost = graph[end_y][end_x]->h_cost;
     graph[end_y][end_x]->reached = 2;
     
+    // printf("Inserting start and end nodes into queues\n");
     insert_fwd(graph[start_y][start_x], graph[start_y][start_x]->f_cost, &queue_fwd, &queue_size_fwd, &max_queue_size_fwd);
     insert_bwd(graph[end_y][end_x], graph[end_y][end_x]->f_cost, &queue_bwd, &queue_size_bwd, &max_queue_size_bwd);
     
     graph_node_t* intersection = NULL;
     double best_path_cost = MAX_COST;
     
+    // printf("Starting search loop\n");
     while (!is_empty_fwd() && !is_empty_bwd()) {
         // Forward search
+        // printf("Forward search iteration\n");
         graph_node_t* current_fwd = get_fwd(queue_fwd, &queue_size_fwd);
         if (!current_fwd) {
             printf("Forward queue returned NULL!\n");
             break;
         }
+        // printf("Processing forward node (%d,%d)\n", current_fwd->x, current_fwd->y);
         
         adj_list_node_t* neighbor = current_fwd->adj_list_head;
-        while (neighbor && neighbor->node) {  // Added null check
+        while (neighbor && neighbor->node) {
+            // printf("Checking neighbor (%d,%d)\n", neighbor->node->x, neighbor->node->y);
             double tentative_g = current_fwd->g_cost + neighbor->distance;
             if (tentative_g < neighbor->node->g_cost) {
                 neighbor->node->parent = current_fwd;
@@ -368,10 +379,11 @@ void bidirectional_a_star(int start_x, int start_y, int end_x, int end_y) {
                 neighbor->node->f_cost = tentative_g + neighbor->node->h_cost;
                 
                 if (neighbor->node->reached == 2) {
-                    double total_cost = tentative_g + neighbor->node->g_cost;
+                    double total_cost = tentative_g + neighbor->node->g_cost_bwd;
                     if (total_cost < best_path_cost) {
                         best_path_cost = total_cost;
                         intersection = neighbor->node;
+                        //printf("Found intersection at (%d,%d)\n", intersection->x, intersection->y);
                     }
                 } else if (neighbor->node->reached == 0) {
                     neighbor->node->reached = 1;
@@ -382,18 +394,21 @@ void bidirectional_a_star(int start_x, int start_y, int end_x, int end_y) {
         }
         
         // Backward search
+        //printf("Backward search iteration\n");
         graph_node_t* current_bwd = get_bwd(queue_bwd, &queue_size_bwd);
         if (!current_bwd) {
             printf("Backward queue returned NULL!\n");
             break;
         }
+        // printf("Processing backward node (%d,%d)\n", current_bwd->x, current_bwd->y);
         
         neighbor = current_bwd->adj_list_head;
-        while (neighbor && neighbor->node) {  // Added null check
-            double tentative_g = current_bwd->g_cost + neighbor->distance;
-            if (tentative_g < neighbor->node->g_cost) {
+        while (neighbor && neighbor->node) {
+            // printf("Checking neighbor (%d,%d)\n", neighbor->node->x, neighbor->node->y);
+            double tentative_g = current_bwd->g_cost_bwd + neighbor->distance;
+            if (tentative_g < neighbor->node->g_cost_bwd) {
                 neighbor->node->backward_parent = current_bwd;
-                neighbor->node->g_cost = tentative_g;
+                neighbor->node->g_cost_bwd = tentative_g;
                 neighbor->node->h_cost = heuristic(neighbor->node->x, neighbor->node->y, start_x, start_y);
                 neighbor->node->f_cost = tentative_g + neighbor->node->h_cost;
                 
@@ -402,6 +417,7 @@ void bidirectional_a_star(int start_x, int start_y, int end_x, int end_y) {
                     if (total_cost < best_path_cost) {
                         best_path_cost = total_cost;
                         intersection = neighbor->node;
+                        //printf("Found intersection at (%d,%d)\n", intersection->x, intersection->y);
                     }
                 } else if (neighbor->node->reached == 0) {
                     neighbor->node->reached = 2;
@@ -412,6 +428,7 @@ void bidirectional_a_star(int start_x, int start_y, int end_x, int end_y) {
         }
     }
     
+    printf("Search completed\n");
     if (intersection) {
         printf("\nIntersection found at (%d,%d)\n", intersection->x, intersection->y);
         printf("Forward path (start to intersection): ");
@@ -437,6 +454,7 @@ void bidirectional_a_star(int start_x, int start_y, int end_x, int end_y) {
     
     free_queue_fwd();
     free_queue_bwd();
+    // printf("Queues freed\n");
 }
 
 // Main function

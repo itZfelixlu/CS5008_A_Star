@@ -25,21 +25,28 @@ queue_node_t** queue_bwd = NULL;
 static void swap(size_t i, size_t j, queue_node_t** q, size_t q_size) {
     if (i < 0 || j < 0 || i >= q_size || j >= q_size) {
         fprintf(stderr, "Swap indices out of bounds.\n");
-    } else {
-        queue_node_t* temp = q[i];
-        q[i] = q[j];
-        q[j] = temp;
+        return;
     }
+    if (!q || !q[i] || !q[j]) {
+        fprintf(stderr, "Invalid queue or queue nodes in swap\n");
+        return;
+    }
+    queue_node_t* temp = q[i];
+    q[i] = q[j];
+    q[j] = temp;
 }
 
 static void heapify(size_t i, queue_node_t** q, size_t q_size) {
+    if (!q || i >= q_size) return;  // Added safety check
+    
     size_t smallest = i;
     size_t left = 2 * i + 1;
     size_t right = 2 * i + 2;
-    if (left < q_size && q[left]->priority < q[smallest]->priority) {
+    
+    if (left < q_size && q[left] && q[left]->priority < q[smallest]->priority) {
         smallest = left;
     }
-    if (right < q_size && q[right]->priority < q[smallest]->priority) {
+    if (right < q_size && q[right] && q[right]->priority < q[smallest]->priority) {
         smallest = right;
     }
     if (smallest != i) {
@@ -51,29 +58,76 @@ static void heapify(size_t i, queue_node_t** q, size_t q_size) {
 // Forward queue functions
 void init_queue_fwd() {
     queue_fwd = malloc(sizeof(queue_node_t*) * INIT_QUEUE_SIZE);
+    if (!queue_fwd) {
+        fprintf(stderr, "Failed to allocate memory for queue_fwd.\n");
+        exit(1);
+    }
+    // Initialize all slots to NULL
+    for (int i = 0; i < INIT_QUEUE_SIZE; i++) {
+        queue_fwd[i] = NULL;
+    }
+    queue_size_fwd = 0;
+    max_queue_size_fwd = INIT_QUEUE_SIZE;
 }
 
-void insert_fwd(graph_node_t* node, int priority, queue_node_t*** q, size_t* q_size, size_t* max_q_size) {
+void insert_fwd(graph_node_t* node, double priority, queue_node_t*** q, size_t* q_size, size_t* max_q_size) {
+    // printf("1. Starting insert_fwd\n");
+    // printf("2. Current queue size: %zu, max size: %zu\n", *q_size, *max_q_size);
+    
     (*q_size)++;
+    // printf("3. Incremented queue size\n");
+    
     if (*q_size >= *max_q_size) {
+        // printf("4. Need to reallocate\n");
         *max_q_size *= 2;
         *q = realloc(*q, sizeof(queue_node_t*) * (*max_q_size));
+        // printf("5. Realloc completed\n");
+        if (!*q) {
+            fprintf(stderr, "Failed to reallocate queue memory\n");
+            exit(1);
+        }
     }
+    
+    // printf("6. Allocating new node\n");
     queue_node_t* new_node = malloc(sizeof(queue_node_t));
+    if (!new_node) {
+        fprintf(stderr, "Failed to allocate new node\n");
+        exit(1);
+    }
+    // printf("7. New node allocated\n");
+    
     new_node->node = node;
     new_node->priority = priority;
+    // printf("8. Setting new node values\n");
+    
     (*q)[*q_size - 1] = new_node;
+    // printf("9. Node added to queue\n");
+    
     size_t i = *q_size - 1;
     size_t parent = (i - 1) / 2;
-    while (i > 0 && (*q)[parent]->priority > (*q)[i]->priority) {
-        swap(parent, i, *q, *q_size);
-        i = parent;
-        parent = (i - 1) / 2;
+    // printf("10. Starting heapify up\n");
+    
+    while (i > 0) {
+        // printf("11. Checking parent at index %zu\n", parent);
+        if (!(*q)[parent] || !(*q)[i]) {
+            // printf("Warning: NULL node found during heapify\n");
+            break;
+        }
+        if ((*q)[parent]->priority > (*q)[i]->priority) {
+            // printf("12. Swapping nodes\n");
+            swap(parent, i, *q, *q_size);
+            i = parent;
+            parent = (i - 1) / 2;
+        } else {
+            break;
+        }
     }
+    // printf("13. Insert completed\n");
 }
 
 graph_node_t* get_fwd(queue_node_t** q, size_t* q_size) {
     if (*q_size == 0) return NULL;
+    if (!q || !q[0]) return NULL;
     graph_node_t* result = q[0]->node;
     (*q_size)--;
     swap(0, *q_size, q, *q_size + 1);
@@ -96,15 +150,33 @@ void free_queue_fwd() {
 // Backward queue functions
 void init_queue_bwd() {
     queue_bwd = malloc(sizeof(queue_node_t*) * INIT_QUEUE_SIZE);
+    if (!queue_bwd) {
+        fprintf(stderr, "Failed to allocate memory for queue_bwd.\n");
+        exit(1);
+    }
+    // Initialize all slots to NULL
+    for (int i = 0; i < INIT_QUEUE_SIZE; i++) {
+        queue_bwd[i] = NULL;
+    }
+    queue_size_bwd = 0;
+    max_queue_size_bwd = INIT_QUEUE_SIZE;
 }
 
-void insert_bwd(graph_node_t* node, int priority, queue_node_t*** q, size_t* q_size, size_t* max_q_size) {
+void insert_bwd(graph_node_t* node, double priority, queue_node_t*** q, size_t* q_size, size_t* max_q_size) {
     (*q_size)++;
     if (*q_size >= *max_q_size) {
         *max_q_size *= 2;
         *q = realloc(*q, sizeof(queue_node_t*) * (*max_q_size));
+        if (!*q) {
+            fprintf(stderr, "Failed to reallocate queue memory\n");
+            exit(1);
+        }
     }
     queue_node_t* new_node = malloc(sizeof(queue_node_t));
+    if (!new_node) {
+        fprintf(stderr, "Failed to allocate new node\n");
+        exit(1);
+    }
     new_node->node = node;
     new_node->priority = priority;
     (*q)[*q_size - 1] = new_node;
@@ -119,6 +191,7 @@ void insert_bwd(graph_node_t* node, int priority, queue_node_t*** q, size_t* q_s
 
 graph_node_t* get_bwd(queue_node_t** q, size_t* q_size) {
     if (*q_size == 0) return NULL;
+    if (!q || !q[0]) return NULL; 
     graph_node_t* result = q[0]->node;
     (*q_size)--;
     swap(0, *q_size, q, *q_size + 1);

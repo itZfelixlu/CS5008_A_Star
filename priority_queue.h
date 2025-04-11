@@ -17,7 +17,7 @@
 // Queue node structure for bidirectional A*
 typedef struct queue_node {
     graph_node_t* node;
-    int priority;
+    double priority;
 } queue_node_t;
 
 // External variables for bidirectional A*
@@ -38,13 +38,13 @@ typedef struct {
 
 // Function declarations for bidirectional A*
 void init_queue_fwd();
-void insert_fwd(graph_node_t* node, int priority, queue_node_t*** q, size_t* q_size, size_t* max_q_size);
+void insert_fwd(graph_node_t* node, double priority, queue_node_t*** q, size_t* q_size, size_t* max_q_size);
 graph_node_t* get_fwd(queue_node_t** q, size_t* q_size);
 int is_empty_fwd();
 void free_queue_fwd();
 
 void init_queue_bwd();
-void insert_bwd(graph_node_t* node, int priority, queue_node_t*** q, size_t* q_size, size_t* max_q_size);
+void insert_bwd(graph_node_t* node, double priority, queue_node_t*** q, size_t* q_size, size_t* max_q_size);
 graph_node_t* get_bwd(queue_node_t** q, size_t* q_size);
 int is_empty_bwd();
 void free_queue_bwd();
