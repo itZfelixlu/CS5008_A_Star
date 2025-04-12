@@ -12,7 +12,7 @@
 #include <stddef.h>
 #include "a_star.h"
 
-#define INIT_QUEUE_SIZE 25
+#define INIT_QUEUE_SIZE 1000
 
 // Queue node structure for bidirectional A*
 typedef struct queue_node {
