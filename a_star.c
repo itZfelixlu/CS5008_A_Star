@@ -115,7 +115,7 @@ void setup_complicated_grid() {
     obstacle_count = 0;
     num_slope_regions = 4;
     
-    // Define slope regions (e.g., 3 random 20x20 patches)
+    // Define slope regions (e.g., 3 random 15x15 patches)
     int region_size = 15;
     for (int i = 0; i < num_slope_regions; i++) {
         int x_min = rand() % (GRID_SIZE - region_size);
@@ -316,6 +316,7 @@ path_result_t a_star(int start_x, int start_y, int end_x, int end_y) {
             i--;
         }
         printf("\nTotal path cost: %.2f\n", current->g_cost);
+        printf("Total nodes explored: %d\n", nodes_explored);
     }
     
     free_priority_queue(open_set);
@@ -367,7 +368,7 @@ path_result_t dynamic_weighted_a_star(int start_x, int start_y, int end_x, int e
     PIDController pid = {0};
     pid.kp = 0.8;
     pid.ki = 0.0;
-    pid.kd = 0.001;
+    pid.kd = 0.01;
     pid.weight = 1.0;
     pid.last_error = heuristic(start_x, start_y, end_x, end_y);
     pid.integral = 0.0;
@@ -473,8 +474,8 @@ path_result_t dynamic_weighted_a_star(int start_x, int start_y, int end_x, int e
             neighbor = neighbor->next;
         }
         
-        // Print PID values every 5 iterations
-        if (iterations % 2 == 0) {
+        // Print PID values every 10 iterations
+        if (iterations % 10 == 0) {
             printf("Iteration %d: weight=%.2f, error=%.2f\n", 
                    iterations, pid.weight, pid.last_error);
         }
@@ -513,6 +514,7 @@ path_result_t dynamic_weighted_a_star(int start_x, int start_y, int end_x, int e
             i--;
         }
         printf("\nTotal path cost: %.2f\n", current->g_cost);
+        printf("Total nodes explored: %d\n", nodes_explored);
     }
     
     free_priority_queue(open_set);
@@ -732,6 +734,7 @@ path_result_t bidirectional_a_star(int start_x, int start_y, int end_x, int end_
         }
 
         printf("Total path cost: %.2f\n", best_path_cost);
+        printf("Total nodes explored: %d\n", nodes_explored);
     } else {
         printf("No path found between (%d,%d) and (%d,%d)!\n", start_x, start_y, end_x, end_y);
     }

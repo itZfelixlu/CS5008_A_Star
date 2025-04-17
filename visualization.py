@@ -2,6 +2,13 @@ import pygame
 import json
 import time
 import random
+import os
+import imageio
+import numpy as np
+from datetime import datetime
+from PIL import Image
+import io
+import threading
 
 # Initialize Pygame
 pygame.init()
@@ -66,7 +73,8 @@ class Grid:
         self.path = []
         self.explored_nodes = []
         self.current_animation_index = 0
-        self.animation_speed = 10  # Number of nodes to show per frame
+        self.animation_speed = 5  # Increased from 1 to 5 for faster animation
+        self.animation_delay = 0
         self.is_animating = False
         self.current_algorithm = None
         self.current_grid_type = None
@@ -75,6 +83,12 @@ class Grid:
         self.meeting_point = None  # Store the meeting point for bidirectional A*
         self.forward_path = []  # Store forward path
         self.backward_path = []  # Store backward path
+        self.frames = []  # Store frames for GIF creation
+        self.frame_skip = 1  # Only capture every nth frame
+        self.frame_counter = 0
+        self.max_frames = 1000  # Maximum number of frames to store
+        self.is_saving = False
+        self.save_thread = None
         
     def load_simple_grid(self):
         self.grid = [[0 for _ in range(self.width)] for _ in range(self.height)]
@@ -86,6 +100,13 @@ class Grid:
         self.current_grid_type = "simple"
         self.slope_regions = []  # Clear slope regions
         self.show_path = False
+        self.frames = []  # Clear frames when loading new grid
+        self.frame_counter = 0
+        # Adjust frame skip based on grid complexity
+        if len(self.explored_nodes) > 1000:
+            self.frame_skip = max(1, len(self.explored_nodes) // 500)  # Target ~500 frames
+        else:
+            self.frame_skip = 1
         
     def load_complicated_grid(self):
         # Load the grid setup from the JSON file
@@ -127,6 +148,14 @@ class Grid:
         except Exception as e:
             print(f"Error loading complicated grid: {e}")
         
+        self.frames = []  # Clear frames when loading new grid
+        self.frame_counter = 0
+        # Adjust frame skip based on grid complexity
+        if len(self.explored_nodes) > 1000:
+            self.frame_skip = max(1, len(self.explored_nodes) // 500)  # Target ~500 frames
+        else:
+            self.frame_skip = 1
+        
     def load_results(self, algorithm, grid_type):
         filename = f"result_{grid_type}.json"
         try:
@@ -137,8 +166,10 @@ class Grid:
                 self.explored_nodes = algorithm_data['explored_nodes']
                 self.current_animation_index = 0
                 self.is_animating = True
+                self.show_path = False  # Reset path display
                 self.current_algorithm = algorithm
                 self.current_grid_type = grid_type
+                self.frames = []  # Clear any existing frames
                 
                 # For bidirectional A*, find the meeting point
                 if algorithm == "bidirectional_a_star":
@@ -156,16 +187,60 @@ class Grid:
                                 self.meeting_point = node
                         else:
                             forward_nodes.add(node_key)
+                            
+                # Start capturing frames immediately
+                if not self.is_saving:
+                    frame = pygame.surfarray.array3d(pygame.display.get_surface())
+                    frame = np.transpose(frame, (1, 0, 2)).astype(np.uint8)
+                    self.frames.append(frame)
         except Exception as e:
             print(f"Error loading {filename}: {e}")
         
     def update_animation(self):
         if self.is_animating and self.current_animation_index < len(self.explored_nodes):
+            # Update animation index with increased speed
             self.current_animation_index = min(self.current_animation_index + self.animation_speed, 
-                                            len(self.explored_nodes))
+                                             len(self.explored_nodes))
+            
             if self.current_animation_index >= len(self.explored_nodes):
                 self.is_animating = False
-
+                self.show_path = True  # Enable path display
+                
+    def save_animation_gif(self, filename=None):
+        if not self.frames:
+            print("No frames to save!")
+            return
+            
+        if filename is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"animation_{timestamp}.gif"
+            
+        print(f"Processing {len(self.frames)} frames...")
+        
+        # Start saving in a separate thread to avoid freezing the UI
+        def save_thread():
+            self.is_saving = True
+            try:
+                # Save as GIF with high quality settings and higher frame rate
+                imageio.mimsave(
+                    filename, 
+                    self.frames, 
+                    duration=0.016,  # ~60 FPS (1/60 seconds per frame)
+                    quantizer='nq',  # Neural quantization for better quality
+                    fps=60,  # 60 frames per second
+                    loop=0,  # Loop infinitely
+                    subrectangles=True  # Optimize by only storing changed parts
+                )
+                print(f"Animation saved as {filename}")
+            except Exception as e:
+                print(f"Error saving animation: {e}")
+            finally:
+                self.is_saving = False
+                self.frames = []  # Clear frames after saving
+                
+        self.save_thread = threading.Thread(target=save_thread)
+        self.save_thread.start()
+        
     def draw(self, screen):
         # Draw grid background
         for y in range(self.height):
@@ -179,23 +254,21 @@ class Grid:
                 elif self.grid[y][x] == 2:  # Slope
                     pygame.draw.rect(screen, BROWN, rect)
         
-        # Draw explored nodes up to current animation index in blue
+        # Draw explored nodes up to current animation index
         for i in range(self.current_animation_index):
             node = self.explored_nodes[i]
             x, y = node['x'], node['y']
-            if self.grid[y][x] != 1:  # Don't draw explored nodes on obstacles
-                rect = pygame.Rect(x * self.cell_size, y * self.cell_size, 
-                                 self.cell_size, self.cell_size)
-                pygame.draw.rect(screen, BLUE, rect)
+            if self.grid[y][x] != 1:  # Don't draw on obstacles
+                pygame.draw.rect(screen, BLUE, (x * self.cell_size, y * self.cell_size, 
+                                              self.cell_size, self.cell_size))
         
-        # Draw final path in green
-        if self.path and not self.is_animating:  # Only show path when animation is complete
+        # Draw final path in green when animation is complete
+        if self.path and (self.show_path or not self.is_animating):
             for node in self.path:
                 x, y = node['x'], node['y']
-                if self.grid[y][x] != 1:  # Don't draw path on obstacles
-                    rect = pygame.Rect(x * self.cell_size, y * self.cell_size, 
-                                     self.cell_size, self.cell_size)
-                    pygame.draw.rect(screen, GREEN, rect)
+                if self.grid[y][x] != 1:  # Don't draw on obstacles
+                    pygame.draw.rect(screen, GREEN, (x * self.cell_size, y * self.cell_size, 
+                                                   self.cell_size, self.cell_size))
         
         # Draw start and end points
         start_rect = pygame.Rect(self.start[0] * self.cell_size, 
@@ -221,6 +294,19 @@ class Grid:
             y = self.meeting_point['y'] * self.cell_size
             pygame.draw.rect(screen, RED, (x, y, self.cell_size, self.cell_size))
 
+        # Capture frame after everything is drawn
+        if not self.is_saving:
+            frame = pygame.surfarray.array3d(pygame.display.get_surface())
+            frame = np.transpose(frame, (1, 0, 2)).astype(np.uint8)
+            self.frames.append(frame)
+            
+            # If this is the final state, capture additional frames
+            if not self.is_animating and self.show_path:
+                for _ in range(20):  # Capture 20 frames of the final state
+                    frame = pygame.surfarray.array3d(pygame.display.get_surface())
+                    frame = np.transpose(frame, (1, 0, 2)).astype(np.uint8)
+                    self.frames.append(frame)
+
 def main():
     clock = pygame.time.Clock()
     running = True
@@ -235,7 +321,8 @@ def main():
         Button(button_start_x, button_start_y + (BUTTON_HEIGHT + BUTTON_MARGIN), BUTTON_WIDTH, BUTTON_HEIGHT, "Complicated Grid"),
         Button(button_start_x, button_start_y + 3 * (BUTTON_HEIGHT + BUTTON_MARGIN), BUTTON_WIDTH, BUTTON_HEIGHT, "Regular A*"),
         Button(button_start_x, button_start_y + 4 * (BUTTON_HEIGHT + BUTTON_MARGIN), BUTTON_WIDTH, BUTTON_HEIGHT, "Bidirectional A*"),
-        Button(button_start_x, button_start_y + 5 * (BUTTON_HEIGHT + BUTTON_MARGIN), BUTTON_WIDTH, BUTTON_HEIGHT, "Dynamic A*")
+        Button(button_start_x, button_start_y + 5 * (BUTTON_HEIGHT + BUTTON_MARGIN), BUTTON_WIDTH, BUTTON_HEIGHT, "Dynamic A*"),
+        Button(button_start_x, button_start_y + 6 * (BUTTON_HEIGHT + BUTTON_MARGIN), BUTTON_WIDTH, BUTTON_HEIGHT, "Save Animation GIF")
     ]
     
     grid = Grid(GRID_SIZE, GRID_SIZE, CELL_SIZE)
@@ -265,9 +352,11 @@ def main():
                         elif i == 4:  # Dynamic A*
                             if grid.current_grid_type:
                                 grid.load_results("dynamic_a_star", grid.current_grid_type)
+                        elif i == 5:  # Save Animation GIF
+                            grid.save_animation_gif()
         
-        # Update animation
-        if current_time - last_update > 0.1:  # Update every 0.1 seconds
+        # Update animation more frequently
+        if current_time - last_update > 0.05:  # Reduced from 0.1 to 0.05 seconds
             grid.update_animation()
             last_update = current_time
         
